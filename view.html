@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Local Video Player</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; margin: 20px; background:#f7f7fb; color:#111; }
+    .container { max-width:900px; margin:0 auto; }
+    h1 { font-size:1.2rem; margin-bottom:8px; }
+    .controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+    .btn { padding:8px 12px; border-radius:6px; border:1px solid #ccc; background:white; cursor:pointer; }
+    .btn:active { transform:translateY(1px); }
+    #drop { border:2px dashed #cfd8e3; padding:18px; border-radius:8px; text-align:center; color:#586; background:white; }
+    #playlist { margin-top:12px; padding:0; list-style:none; max-height:220px; overflow:auto; border-radius:8px; border:1px solid #e2e6ef; background:white; }
+    #playlist li { padding:8px 10px; border-bottom:1px solid #f0f3fa; cursor:pointer; display:flex; justify-content:space-between; align-items:center; }
+    #playlist li.current { background:#eef2ff; font-weight:600; }
+    #playlist li:last-child { border-bottom: none; }
+    small { color:#666; display:block; margin-top:6px; }
+    video { width:100%; max-height:60vh; background:black; border-radius:8px; }
+    .meta { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:8px; }
+    .filename { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:70%; }
+    .muted { opacity:.6 }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Local Video Player</h1>
+
+    <div class="controls">
+      <label class="btn">
+        Choose files
+        <input id="fileInput" type="file" accept="video/*" multiple style="display:none">
+      </label>
+
+      <div class="btn" id="prevBtn" title="Previous (←)">⟨ Prev</div>
+      <div class="btn" id="playPauseBtn" title="Play / Pause (Space)">Play</div>
+      <div class="btn" id="nextBtn" title="Next (→)">Next ⟩</div>
+
+      <label class="btn" title="Toggle loop">
+        <input id="loopChk" type="checkbox" style="margin-right:6px"> Loop
+      </label>
+
+      <label class="btn" title="Toggle muted">
+        <input id="muteChk" type="checkbox" style="margin-right:6px"> Mute
+      </label>
+    </div>
+
+    <div id="drop">Drag & drop video files here — or click <em>Choose files</em>.</div>
+    <small>Supported formats depend on your browser (common: mp4, webm, ogg). Files remain local to your computer.</small>
+
+    <div style="margin-top:12px">
+      <video id="player" controls></video>
+
+      <div class="meta">
+        <div class="filename" id="currentName">No file loaded</div>
+        <div class="muted" id="fileCount">0 files</div>
+      </div>
+
+      <ul id="playlist" role="list"></ul>
+    </div>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById('fileInput');
+    const drop = document.getElementById('drop');
+    const player = document.getElementById('player');
+    const playlistEl = document.getElementById('playlist');
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const currentName = document.getElementById('currentName');
+    const fileCount = document.getElementById('fileCount');
+    const loopChk = document.getElementById('loopChk');
+    const muteChk = document.getElementById('muteChk');
+
+    let files = [];      // Array of File objects
+    let current = -1;    // index in files
+    let currentURL = null;
+
+    function addFiles(fileList) {
+      // keep order: append new files
+      for (const f of fileList) {
+        if (!f.type.startsWith('video/')) continue;
+        files.push(f);
+      }
+      refreshPlaylist();
+      if (current === -1 && files.length > 0) {
+        loadIndex(0);
+      }
+    }
+
+    function refreshPlaylist() {
+      playlistEl.innerHTML = '';
+      files.forEach((f, i) => {
+        const li = document.createElement('li');
+        li.textContent = f.name;
+        if (i === current) li.classList.add('current');
+        const removeBtn = document.createElement('button');
+        removeBtn.textContent = '✕';
+        removeBtn.title = 'Remove from list';
+        removeBtn.style.border = 'none';
+        removeBtn.style.background = 'transparent';
+        removeBtn.style.cursor = 'pointer';
+        removeBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          removeIndex(i);
+        });
+        li.appendChild(removeBtn);
+        li.addEventListener('click', () => loadIndex(i));
+        playlistEl.appendChild(li);
+      });
+      fileCount.textContent = `${files.length} file${files.length !== 1 ? 's' : ''}`;
+      if (files.length === 0) {
+        currentName.textContent = 'No file loaded';
+      }
+    }
+
+    function loadIndex(i) {
+      if (i < 0 || i >= files.length) return;
+      current = i;
+      const file = files[i];
+
+      // free previous URL
+      if (currentURL) {
+        URL.revokeObjectURL(currentURL);
+        currentURL = null;
+      }
+
+      currentURL = URL.createObjectURL(file);
+      player.src = currentURL;
+      player.loop = loopChk.checked;
+      player.muted = muteChk.checked;
+      player.play().catch(()=>{}); // attempt autoplay; many browsers block without user gesture
+      updateUI();
+    }
+
+    function updateUI() {
+      const lis = playlistEl.querySelectorAll('li');
+      lis.forEach((li, idx) => li.classList.toggle('current', idx === current));
+      if (current >= 0 && files[current]) {
+        currentName.textContent = files[current].name;
+        playPauseBtn.textContent = player.paused ? 'Play' : 'Pause';
+      } else {
+        currentName.textContent = 'No file loaded';
+        playPauseBtn.textContent = 'Play';
+      }
+    }
+
+    function removeIndex(i) {
+      if (i < 0 || i >= files.length) return;
+      const wasCurrent = i === current;
+      files.splice(i, 1);
+      if (wasCurrent) {
+        if (files.length === 0) {
+          // stop and clear
+          player.pause();
+          player.removeAttribute('src');
+          if (currentURL) { URL.revokeObjectURL(currentURL); currentURL = null; }
+          current = -1;
+        } else {
+          // try to load the same index (which is now next item), or previous if removed last
+          const nextIndex = i < files.length ? i : files.length - 1;
+          loadIndex(nextIndex);
+        }
+      } else if (i < current) {
+        // shift current index down
+        current--;
+      }
+      refreshPlaylist();
+      updateUI();
+    }
+
+    // Buttons
+    playPauseBtn.addEventListener('click', () => {
+      if (!player.src) return;
+      if (player.paused) player.play();
+      else player.pause();
+      updateUI();
+    });
+    prevBtn.addEventListener('click', () => {
+      if (files.length === 0) return;
+      const prev = (current > 0) ? current - 1 : (files.length - 1);
+      loadIndex(prev);
+    });
+    nextBtn.addEventListener('click', () => {
+      if (files.length === 0) return;
+      const next = (current < files.length - 1) ? current + 1 : 0;
+      loadIndex(next);
+    });
+
+    // file input
+    fileInput.addEventListener('change', e => {
+      addFiles(e.target.files);
+      fileInput.value = '';
+    });
+
+    // drag & drop
+    ;['dragenter','dragover'].forEach(evt => {
+      drop.addEventListener(evt, (e) => {
+        e.preventDefault(); e.stopPropagation();
+        drop.style.borderColor = '#88a';
+      });
+    });
+    ;['dragleave','drop'].forEach(evt => {
+      drop.addEventListener(evt, (e) => {
+        e.preventDefault(); e.stopPropagation();
+        drop.style.borderColor = '#cfd8e3';
+      });
+    });
+    drop.addEventListener('drop', (e) => {
+      const dt = e.dataTransfer;
+      if (dt && dt.files && dt.files.length) addFiles(dt.files);
+    });
+
+    // keyboard shortcuts
+    window.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        playPauseBtn.click();
+      } else if (e.key === 'ArrowLeft') {
+        prevBtn.click();
+      } else if (e.key === 'ArrowRight') {
+        nextBtn.click();
+      }
+    });
+
+    // video events
+    player.addEventListener('play', updateUI);
+    player.addEventListener('pause', updateUI);
+    player.addEventListener('ended', () => {
+      // if not looping, auto advance
+      if (!player.loop) {
+        const next = (current < files.length - 1) ? current + 1 : 0;
+        if (files.length > 1) loadIndex(next);
+      }
+    });
+
+    // loop and mute checkboxes
+    loopChk.addEventListener('change', () => {
+      player.loop = loopChk.checked;
+    });
+    muteChk.addEventListener('change', () => {
+      player.muted = muteChk.checked;
+    });
+
+    // safety: revoke URLs when window unloads
+    window.addEventListener('beforeunload', () => {
+      if (currentURL) URL.revokeObjectURL(currentURL);
+    });
+
+    // helpful tip: Accept attribute already restricts dialogs, but browsers still allow any file in drag-drop.
+    // This simple player keeps everything local and does not upload files anywhere.
+  </script>
+</body>
+</html>
